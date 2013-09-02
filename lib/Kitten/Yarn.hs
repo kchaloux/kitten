@@ -3,7 +3,9 @@
 
 module Kitten.Yarn
   ( Instruction(..)
+  , Index
   , Label
+  , Offset
   , Value(..)
   , yarn
   ) where
@@ -42,6 +44,8 @@ data Instruction
   | Call !Label
   | Closure !Index
   | Comment !Text
+  | EndDef
+  | EndEntry
   | Enter
   | EntryLabel
   | Jump !Offset
@@ -56,7 +60,10 @@ data Instruction
   | Return
 
 instance Show Instruction where
-  show instruction = T.unpack . T.unwords $ case instruction of
+  show = T.unpack . toText
+
+instance ToText Instruction where
+  toText instruction = T.unwords $ case instruction of
     Act label names
       -> "act" : showText label : map showClosedName (V.toList names)
       where
@@ -64,10 +71,12 @@ instance Show Instruction where
       showClosedName (ClosedName (Name index)) = "local:" <> showText index
       showClosedName (ReclosedName (Name index)) = "closure:" <> showText index
 
-    Builtin builtin -> ["builtin", showText builtin]
+    Builtin builtin -> ["builtin", toText builtin]
     Call label -> ["call", showText label]
     Closure index -> ["closure", showText index]
     Comment comment -> ["\n;", comment]
+    EndEntry -> ["\n"]
+    EndDef -> ["\n"]
     Enter -> ["enter"]
     EntryLabel -> ["\nentry"]
     Jump offset -> ["jmp", showText offset]
@@ -78,7 +87,7 @@ instance Show Instruction where
     Label label -> ["\nlabel", showText label]
     Local index -> ["local", showText index]
     MakeVector size -> ["vector", showText size]
-    Push value -> ["push", showText value]
+    Push value -> ["push", toText value]
     Return -> ["ret"]
 
 data Value
@@ -160,8 +169,11 @@ yarn Fragment{..}
     :: Int
     -> Vector Instruction
     -> Vector Instruction
-  collectClosure index instructions
-    = V.singleton (Label index) <> instructions <> V.singleton Return
+  collectClosure index instructions = V.concat
+    [ V.singleton (Label index)
+    , instructions
+    , V.fromList [Return, EndDef]
+    ]
 
 yarnDef
   :: Def Resolved.Value
@@ -171,18 +183,20 @@ yarnDef Def{..} index = do
   instructions <- case defTerm of
     Resolved.Closure _ term -> yarnTerm term
     _ -> error "Kitten.Yarn.yarnDef: TODO yarn non-function definition"
-  return
-    $ V.fromList [Comment defName, Label index]
-    <> instructions
-    <> V.singleton Return
+  return $ V.concat
+    [ V.fromList [Comment defName, Label index]
+    , instructions
+    , V.fromList [Return, EndDef]
+    ]
 
 yarnEntry :: Vector Resolved -> Yarn (Vector Instruction)
 yarnEntry terms = do
   instructions <- concatMapM yarnTerm terms
-  return
-    $ V.singleton EntryLabel
-    <> instructions
-    <> V.singleton Return
+  return $ V.concat
+    [ V.singleton EntryLabel
+    , instructions
+    , V.singleton EndEntry
+    ]
 
 yarnTerm :: Resolved -> Yarn (Vector Instruction)
 yarnTerm term = case term of

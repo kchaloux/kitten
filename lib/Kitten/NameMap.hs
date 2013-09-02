@@ -7,6 +7,7 @@ module Kitten.NameMap
   , insertWith
   , lookup
   , member
+  , toList
   ) where
 
 import Data.IntMap (IntMap)
@@ -44,3 +45,8 @@ lookup (Name index) (NameMap names)
 member :: Name -> NameMap a -> Bool
 member (Name index) (NameMap names)
   = I.member index names
+
+toList :: NameMap a -> [(Name, a)]
+toList (NameMap names) = map
+  (\ (index, value) -> (Name index, value))
+  (I.toList names)
